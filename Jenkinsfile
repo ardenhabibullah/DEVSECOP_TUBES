@@ -5,7 +5,6 @@ pipeline {
         APP_NAME = "todo-app"
         TEST_URL = "http://localhost:5000"
         VENV_DIR = "/tmp/jenkins_venv"
-        REPORT_DIR = "reports"
     }
 
     stages {
@@ -18,40 +17,28 @@ pipeline {
                     python3 -m venv $VENV_DIR
                     $VENV_DIR/bin/pip install --upgrade pip
                     $VENV_DIR/bin/pip install -r requirements.txt
-                    mkdir -p $REPORT_DIR
+                    mkdir -p reports
                 '''
             }
         }
 
         stage('Test') {
             steps {
-                echo '🧪 Run pytest unit tests and generate report'
+                echo '🧪 Run pytest unit tests'
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_DIR/bin/pip install pytest pytest-html
-                    $VENV_DIR/bin/pytest tests/ --html=$REPORT_DIR/pytest-report.html --self-contained-html
+                    $VENV_DIR/bin/pytest tests/ --junitxml=reports/unit-test-report.xml
                 '''
             }
         }
 
         stage('SAST Scan') {
             steps {
-                echo '🔒 Run Bandit security scan and generate report'
-                // Disable immediate exit on error to handle bandit exit code != 0 gracefully
+                echo '🔒 Run Bandit security scan'
                 sh '''
-                    set +e
-                    $VENV_DIR/bin/pip install bandit
-                    $VENV_DIR/bin/bandit -r app/ -f html -o $REPORT_DIR/bandit-report.html
-                    BANDIT_EXIT_CODE=$?
-                    echo "Bandit exit code: $BANDIT_EXIT_CODE"
                     set -e
-                    # Fail the stage only if needed, or just warn
-                    if [ $BANDIT_EXIT_CODE -ne 0 ]; then
-                        echo "Warning: Bandit found issues, but continuing pipeline."
-                        # Uncomment next line to fail pipeline on bandit issues:
-                        # exit $BANDIT_EXIT_CODE
-                    fi
+                    $VENV_DIR/bin/bandit -r app/ -f html -o reports/bandit-report.html -ll -iii
                 '''
             }
         }
@@ -70,21 +57,18 @@ pipeline {
 
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP scan and generate report'
+                echo '🛡️ Run OWASP ZAP scan'
                 sh '''
                     set -e
                     docker rm -f zap || true
-                    mkdir -p $REPORT_DIR
-                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw \
-                        -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable \
-                        zap.sh -daemon -port 8090 -host 0.0.0.0
-
-                    sleep 15
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 120
+                    docker run --name zap -u root -v $(pwd)/reports:/zap/wrk/:rw -d -p 8091:8090 \
+                        ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+                    sleep 30
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 60
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url ${TEST_URL}
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 spider ${TEST_URL}
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 active-scan ${TEST_URL}
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o /zap/wrk/$REPORT_DIR/zap-report.html -f html
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o /zap/wrk/zap-report.html -f html
                 '''
             }
         }
@@ -103,19 +87,32 @@ pipeline {
 
     post {
         always {
-            publishHTML([
-                reportDir: 'reports',
-                reportFiles: 'pytest-report.html',
-                reportName: 'Pytest Report',
-                reportTitles: 'Unit Test Results'
-            ])
-            publishHTML([
+            echo '🧹 Cleanup: stop flask app'
+            sh 'pkill -f "flask run" || true'
+
+            junit 'reports/unit-test-report.xml'
+
+            publishHTML(target: [
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
                 reportDir: 'reports',
                 reportFiles: 'bandit-report.html',
-                reportName: 'Bandit Security Report',
-                reportTitles: 'Bandit Scan Results'
+                reportName: 'Bandit SAST Report'
             ])
-            // Optional: publish ZAP report if needed
+
+            publishHTML(target: [
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'reports',
+                reportFiles: 'zap-report.html',
+                reportName: 'OWASP ZAP DAST Report'
+            ])
+        }
+
+        failure {
+            echo '❌ Build failed! Please check logs.'
         }
     }
 }
