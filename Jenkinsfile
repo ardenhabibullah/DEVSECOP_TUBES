@@ -8,7 +8,13 @@ pipeline {
     }
 
     stages {
-
+        stage('Checkout') {
+            steps {
+                cleanWs()
+                git 'https://github.com/Alfikriangelo/todoapp.git'
+            }
+        }
+        
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
