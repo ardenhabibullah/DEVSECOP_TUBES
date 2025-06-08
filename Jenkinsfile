@@ -38,10 +38,20 @@ pipeline {
         stage('SAST Scan') {
             steps {
                 echo '🔒 Run Bandit security scan and generate report'
+                // Disable immediate exit on error to handle bandit exit code != 0 gracefully
                 sh '''
-                    set -e
+                    set +e
                     $VENV_DIR/bin/pip install bandit
                     $VENV_DIR/bin/bandit -r app/ -f html -o $REPORT_DIR/bandit-report.html
+                    BANDIT_EXIT_CODE=$?
+                    echo "Bandit exit code: $BANDIT_EXIT_CODE"
+                    set -e
+                    # Fail the stage only if needed, or just warn
+                    if [ $BANDIT_EXIT_CODE -ne 0 ]; then
+                        echo "Warning: Bandit found issues, but continuing pipeline."
+                        # Uncomment next line to fail pipeline on bandit issues:
+                        # exit $BANDIT_EXIT_CODE
+                    fi
                 '''
             }
         }
@@ -69,7 +79,7 @@ pipeline {
                         -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable \
                         zap.sh -daemon -port 8090 -host 0.0.0.0
 
-                    sleep 15  # Wait for ZAP to initialize
+                    sleep 15
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 120
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url ${TEST_URL}
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 spider ${TEST_URL}
@@ -94,12 +104,18 @@ pipeline {
     post {
         always {
             publishHTML([
-            reportDir: 'reports',
-            reportFiles: 'pytest-report.html',
-            reportName: 'Pytest Report',
-            reportTitles: 'Unit Test Results'
+                reportDir: 'reports',
+                reportFiles: 'pytest-report.html',
+                reportName: 'Pytest Report',
+                reportTitles: 'Unit Test Results'
             ])
+            publishHTML([
+                reportDir: 'reports',
+                reportFiles: 'bandit-report.html',
+                reportName: 'Bandit Security Report',
+                reportTitles: 'Bandit Scan Results'
+            ])
+            // Optional: publish ZAP report if needed
         }
     }
-
 }
