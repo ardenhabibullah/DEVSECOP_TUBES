@@ -2,104 +2,121 @@ pipeline {
     agent any
 
     environment {
-        VENV_PATH = "/tmp/jenkins_venv"
-        FLASK_APP = "app"
-        FLASK_ENV = "development"
+        APP_NAME = "todo-app"
+        TEST_URL = "http://localhost:5000"
+        VENV_DIR = "/tmp/jenkins_venv"
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                checkout scm
-            }
-        }
 
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
                 sh '''
                     set -e
-                    python3 -m venv $VENV_PATH
-                    $VENV_PATH/bin/pip install --upgrade pip
-                    $VENV_PATH/bin/pip install -r requirements.txt
+                    python3 -m venv $VENV_DIR
+                    $VENV_DIR/bin/pip install --upgrade pip
+                    $VENV_DIR/bin/pip install -r requirements.txt
                 '''
             }
         }
 
         stage('Test') {
             steps {
-                echo '🧪 Run pytest unit tests'
+                echo '🧪 Run pytest unit tests with JUnit XML report'
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_PATH/bin/pytest tests/ --junitxml=report.xml
+                    $VENV_DIR/bin/pytest tests/ --junitxml=pytest-report.xml
                 '''
+            }
+            post {
+                always {
+                    junit 'pytest-report.xml'
+                }
             }
         }
 
-        stage('Publish Test Report') {
-            steps {
-                echo '📊 Publish JUnit test report'
-                junit 'report.xml'
-            }
-        }
 
         stage('SAST Scan') {
             steps {
-                echo '🔒 Run Bandit security scan'
+                echo '🔒 Run Bandit security scan with XML output'
                 sh '''
                     set -e
-                    $VENV_PATH/bin/bandit -r app/ -ll -iii
+                    $VENV_DIR/bin/bandit -r app/ -ll -iii -f xml -o bandit-report.xml
                 '''
             }
+            post {
+                always {
+                    // Anda bisa simpan file xml ini, dan gunakan plugin seperti Warnings Next Generation di Jenkins untuk parse laporan
+                    archiveArtifacts artifacts: 'bandit-report.xml', allowEmptyArchive: true
+                }
+            }
         }
+
 
         stage('Deploy to Test Environment') {
             steps {
                 echo '🚀 Run Flask app in background'
                 sh '''
                     set -e
-                    pkill -f flask run || true
+                    pkill -f "flask run" || true
+                    $VENV_DIR/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
                     sleep 10
-                    $VENV_PATH/bin/flask run --host=0.0.0.0 &
                 '''
             }
         }
 
+        
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP scan'
+                echo '🛡️ Run OWASP ZAP scan and generate HTML report'
                 sh '''
                     set -e
                     docker rm -f zap || true
-                    echo "🐳 Start ZAP container"
-                    docker run --name zap -u root \
-                        -v $(pwd):/zap/wrk/:rw \
-                        -d -p 8091:8090 \
-                        ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 -config api.disablekey=true
-
-                    echo "🔍 Run ZAP active scan"
-                    sleep 20  # wait ZAP to be ready
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 60
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url http://host.docker.internal:5000
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 active-scan --scanners all http://host.docker.internal:5000
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o zap_report.html -f html
+                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+                    sleep 20
+                    # jalankan scan dari container zap (contoh)
+                    docker exec zap zap-cli quick-scan --self-contained --start-options '-config api.disablekey=true' http://host.docker.internal:5000
+                    docker exec zap zap-cli report -o /zap/wrk/zap-report.html -f html
+                    docker stop zap && docker rm zap
                 '''
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'zap_report.html', allowEmptyArchive: true
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'zap-report.html',
+                        reportName: 'OWASP ZAP Report'
+                    ])
                 }
+            }
+        }
+
+
+        stage('Deploy to Staging') {
+            steps {
+                echo '📦 Deploy to staging (example: docker build and push)'
+                sh '''
+                    set -e
+                    docker build -t ${APP_NAME}:latest .
+                    # docker push yourregistry/${APP_NAME}:latest
+                '''
             }
         }
     }
 
     post {
-        success {
-            echo '✅ Pipeline completed successfully!'
+        always {
+            echo '🧹 Cleanup: stop flask app'
+            sh 'pkill -f "flask run" || true'
         }
+
         failure {
-            echo '❌ Pipeline failed. Check logs for details.'
+            echo '❌ Build failed! Please check logs.'
         }
     }
 }
