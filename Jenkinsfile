@@ -12,11 +12,13 @@ pipeline {
                 echo "Setup virtual environment and install dependencies"
                 sh '''
                     python3 -m venv venv
+                    chmod +x ./venv/bin/pip
                     ./venv/bin/pip install --upgrade pip
                     ./venv/bin/pip install -r requirements.txt
                 '''
             }
         }
+
 
         stage('Test') {
             steps {
