@@ -8,13 +8,7 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                cleanWs()
-                git 'https://github.com/Alfikriangelo/todoapp.git'
-            }
-        }
-        
+
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
@@ -29,37 +23,24 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo '🧪 Run pytest unit tests with JUnit XML report'
+                echo '🧪 Run pytest unit tests'
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_DIR/bin/pytest tests/ --junitxml=pytest-report.xml
+                    $VENV_DIR/bin/pytest tests/
                 '''
             }
-            post {
-                always {
-                    junit 'pytest-report.xml'
-                }
-            }
         }
-
 
         stage('SAST Scan') {
             steps {
-                echo '🔒 Run Bandit security scan with XML output'
+                echo '🔒 Run Bandit security scan'
                 sh '''
                     set -e
-                    $VENV_DIR/bin/bandit -r app/ -ll -iii -f xml -o bandit-report.xml
+                    $VENV_DIR/bin/bandit -r app/ -ll -iii
                 '''
             }
-            post {
-                always {
-                    // Anda bisa simpan file xml ini, dan gunakan plugin seperti Warnings Next Generation di Jenkins untuk parse laporan
-                    archiveArtifacts artifacts: 'bandit-report.xml', allowEmptyArchive: true
-                }
-            }
         }
-
 
         stage('Deploy to Test Environment') {
             steps {
@@ -76,29 +57,14 @@ pipeline {
         
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP baseline scan and generate HTML report'
+                echo '🛡️ Run OWASP ZAP scan'
                 sh '''
                     set -e
-                    docker run --rm --network=host \
-                        -v $WORKSPACE:/zap/wrk/:rw \
-                        ghcr.io/zaproxy/zaproxy:stable \
-                        zap-baseline.py -t $TEST_URL -r zap-report.html
+                    docker rm -f zap || true
+                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
                 '''
             }
-            post {
-                always {
-                    publishHTML(target: [
-                        allowMissing: true,
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: '.',
-                        reportFiles: 'zap-report.html',
-                        reportName: 'OWASP ZAP Report'
-                    ])
-                }
-            }
         }
-
 
 
 
