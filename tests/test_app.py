@@ -39,6 +39,7 @@ def logged_in_client(client):
 
 def test_empty_todo_list(logged_in_client):
     response = logged_in_client.get('/')
+    print(response.data.decode())  # untuk lihat apa isi HTML-nya
     assert response.status_code == 200
     assert b'Belum ada tugas' in response.data
 
