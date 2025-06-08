@@ -11,21 +11,24 @@ pipeline {
             steps {
                 echo "Setup virtual environment and install dependencies"
                 sh '''
-                    python3 -m venv venv
-                    chmod +x ./venv/bin/pip
-                    ./venv/bin/pip install --upgrade pip
-                    ./venv/bin/pip install -r requirements.txt
+                    python3 -m venv /tmp/jenkins_venv
+                    /tmp/jenkins_venv/bin/pip install --upgrade pip
+                    /tmp/jenkins_venv/bin/pip install -r requirements.txt
                 '''
             }
         }
 
 
+
         stage('Test') {
             steps {
                 echo "Run pytest unit tests"
-                sh './venv/bin/pytest tests/'
+                sh '''
+                    /tmp/jenkins_venv/bin/pytest tests/
+                '''
             }
         }
+
 
         stage('SAST Scan') {
             steps {
