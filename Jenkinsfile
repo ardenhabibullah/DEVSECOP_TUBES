@@ -4,6 +4,7 @@ pipeline {
     environment {
         APP_NAME = "todo-app"
         TEST_URL = "http://localhost:5000"
+        VENV_DIR = "/tmp/jenkins_venv"
     }
 
     stages {
@@ -13,10 +14,9 @@ pipeline {
                 echo '📦 Setup virtual environment and install dependencies'
                 sh '''
                     set -e
-                    python3 -m venv venv
-                    chmod -R +x venv/bin
-                    venv/bin/pip install --upgrade pip
-                    venv/bin/pip install -r requirements.txt
+                    python3 -m venv $VENV_DIR
+                    $VENV_DIR/bin/pip install --upgrade pip
+                    $VENV_DIR/bin/pip install -r requirements.txt
                 '''
             }
         }
@@ -27,7 +27,7 @@ pipeline {
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    ./venv/bin/pytest tests/
+                    $VENV_DIR/bin/pytest tests/
                 '''
             }
         }
@@ -37,7 +37,7 @@ pipeline {
                 echo '🔒 Run Bandit security scan'
                 sh '''
                     set -e
-                    ./venv/bin/bandit -r app/ -ll -iii
+                    $VENV_DIR/bin/bandit -r app/ -ll -iii
                 '''
             }
         }
@@ -48,7 +48,7 @@ pipeline {
                 sh '''
                     set -e
                     pkill -f "flask run" || true
-                    ./venv/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
+                    $VENV_DIR/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
                     sleep 10
                 '''
             }
@@ -72,7 +72,6 @@ pipeline {
                 sh '''
                     set -e
                     docker build -t ${APP_NAME}:latest .
-                    # Uncomment this line to push to your Docker registry:
                     # docker push yourregistry/${APP_NAME}:latest
                 '''
             }
