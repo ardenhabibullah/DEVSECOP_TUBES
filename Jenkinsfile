@@ -58,7 +58,7 @@ pipeline {
             steps {
                 echo "🛡️ Run OWASP ZAP scan"
                 sh '''
-                docker run -u root -d --name zap -p 8090:8090 -i owasp/zap2docker-stable zap.sh -daemon -port 8090 -host 0.0.0.0 -config api.disablekey=true
+                docker run -u root -d --name zap -p 8090:8090 -i owasp/zap2docker-weekly zap.sh -daemon -port 8090 -host 0.0.0.0 -config api.disablekey=true
                 sleep 15  # tunggu ZAP siap
                 docker exec zap zap-cli quick-scan --self-contained --start-options "-config api.disablekey=true" http://host.docker.internal:5000
                 docker stop zap
