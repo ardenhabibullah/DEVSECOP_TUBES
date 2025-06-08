@@ -27,8 +27,15 @@ pipeline {
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_DIR/bin/pytest tests/
+                    $VENV_DIR/bin/pytest tests/ --junitxml=report.xml
                 '''
+            }
+        }
+
+        stage('Publish Test Report') {
+            steps {
+                echo '📊 Publish JUnit test report'
+                junit 'report.xml'
             }
         }
 
@@ -54,23 +61,41 @@ pipeline {
             }
         }
 
-        
         stage('DAST Scan') {
             steps {
                 echo '🛡️ Run OWASP ZAP scan'
                 sh '''
                     set -e
                     docker rm -f zap || true
+
+                    echo "🐳 Start ZAP container"
                     docker run --name zap -u root -v $(pwd):/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+
+                    echo "⌛ Waiting for ZAP to initialize..."
+                    sleep 15
+
+                    echo "🌐 Running scan on ${TEST_URL}"
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 60
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url ${TEST_URL}
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 spider ${TEST_URL}
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 active-scan ${TEST_URL}
+
+                    echo "📝 Generate ZAP HTML report"
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o /zap/wrk/zap_report.html -f html
                 '''
             }
         }
 
-
+        stage('Archive ZAP Report') {
+            steps {
+                echo '📁 Archive ZAP scan result'
+                archiveArtifacts artifacts: 'zap_report.html', fingerprint: true
+            }
+        }
 
         stage('Deploy to Staging') {
             steps {
-                echo '📦 Deploy to staging (example: docker build and push)'
+                echo '📦 Build Docker image'
                 sh '''
                     set -e
                     docker build -t ${APP_NAME}:latest .
@@ -82,12 +107,12 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleanup: stop flask app'
+            echo '🧹 Cleanup Flask process'
             sh 'pkill -f "flask run" || true'
         }
 
         failure {
-            echo '❌ Build failed! Please check logs.'
+            echo '❌ Build failed! Check logs.'
         }
     }
 }
