@@ -2,21 +2,26 @@ pipeline {
     agent any
 
     environment {
-        APP_NAME = "todo-app"
-        TEST_URL = "http://localhost:5000"
-        VENV_DIR = "/tmp/jenkins_venv"
+        VENV_PATH = "/tmp/jenkins_venv"
+        FLASK_APP = "app"
+        FLASK_ENV = "development"
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
 
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
                 sh '''
                     set -e
-                    python3 -m venv $VENV_DIR
-                    $VENV_DIR/bin/pip install --upgrade pip
-                    $VENV_DIR/bin/pip install -r requirements.txt
+                    python3 -m venv $VENV_PATH
+                    $VENV_PATH/bin/pip install --upgrade pip
+                    $VENV_PATH/bin/pip install -r requirements.txt
                 '''
             }
         }
@@ -27,7 +32,7 @@ pipeline {
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_DIR/bin/pytest tests/ --junitxml=report.xml
+                    $VENV_PATH/bin/pytest tests/ --junitxml=report.xml
                 '''
             }
         }
@@ -44,7 +49,7 @@ pipeline {
                 echo '🔒 Run Bandit security scan'
                 sh '''
                     set -e
-                    $VENV_DIR/bin/bandit -r app/ -ll -iii
+                    $VENV_PATH/bin/bandit -r app/ -ll -iii
                 '''
             }
         }
@@ -54,9 +59,9 @@ pipeline {
                 echo '🚀 Run Flask app in background'
                 sh '''
                     set -e
-                    pkill -f "flask run" || true
-                    $VENV_DIR/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
+                    pkill -f flask run || true
                     sleep 10
+                    $VENV_PATH/bin/flask run --host=0.0.0.0 &
                 '''
             }
         }
@@ -67,52 +72,34 @@ pipeline {
                 sh '''
                     set -e
                     docker rm -f zap || true
-
                     echo "🐳 Start ZAP container"
-                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+                    docker run --name zap -u root \
+                        -v $(pwd):/zap/wrk/:rw \
+                        -d -p 8091:8090 \
+                        ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 -config api.disablekey=true
 
-                    echo "⌛ Waiting for ZAP to initialize..."
-                    sleep 15
-
-                    echo "🌐 Running scan on ${TEST_URL}"
+                    echo "🔍 Run ZAP active scan"
+                    sleep 20  # wait ZAP to be ready
                     docker exec zap zap-cli --zap-url http://localhost -p 8090 status -t 60
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url ${TEST_URL}
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 spider ${TEST_URL}
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 active-scan ${TEST_URL}
-
-                    echo "📝 Generate ZAP HTML report"
-                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o /zap/wrk/zap_report.html -f html
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 open-url http://host.docker.internal:5000
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 active-scan --scanners all http://host.docker.internal:5000
+                    docker exec zap zap-cli --zap-url http://localhost -p 8090 report -o zap_report.html -f html
                 '''
             }
-        }
-
-        stage('Archive ZAP Report') {
-            steps {
-                echo '📁 Archive ZAP scan result'
-                archiveArtifacts artifacts: 'zap_report.html', fingerprint: true
-            }
-        }
-
-        stage('Deploy to Staging') {
-            steps {
-                echo '📦 Build Docker image'
-                sh '''
-                    set -e
-                    docker build -t ${APP_NAME}:latest .
-                    # docker push yourregistry/${APP_NAME}:latest
-                '''
+            post {
+                always {
+                    archiveArtifacts artifacts: 'zap_report.html', allowEmptyArchive: true
+                }
             }
         }
     }
 
     post {
-        always {
-            echo '🧹 Cleanup Flask process'
-            sh 'pkill -f "flask run" || true'
+        success {
+            echo '✅ Pipeline completed successfully!'
         }
-
         failure {
-            echo '❌ Build failed! Check logs.'
+            echo '❌ Pipeline failed. Check logs for details.'
         }
     }
 }
