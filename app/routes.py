@@ -19,7 +19,7 @@ def login_required(f):
 @login_required
 def index():
     todos = Todo.query.all()
-    return render_template('index.html', todos=todos)
+    return render_template('index.html', todos=todos or [])
 
 @main.route('/add', methods=['POST'])
 @login_required
