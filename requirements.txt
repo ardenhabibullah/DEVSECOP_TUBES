@@ -1,4 +1,8 @@
-flask
-flask_sqlalchemy
-python-dotenv
-werkzeug
+Flask==2.3.2
+Flask-SQLAlchemy==3.0.3
+python-dotenv==1.0.0
+werkzeug==2.3.4
+pytest==7.4.0
+pytest-flask==1.2.0
+bandit==1.7.4
+requests==2.31.0
