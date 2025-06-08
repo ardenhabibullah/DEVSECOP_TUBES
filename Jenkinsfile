@@ -93,20 +93,13 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleanup: stop flask app and archive reports'
-            sh '''
-                pkill -f "flask run" || true
-            '''
-            archiveArtifacts artifacts: 'reports/*.html', allowEmptyArchive: true
-            publishHTML([ 
-                reportDir: 'reports', 
-                reportFiles: 'pytest-report.html,bandit-report.html,zap-report.html', 
-                reportName: 'Test & Security Reports' 
+            publishHTML([
+            reportDir: 'reports',
+            reportFiles: 'pytest-report.html',
+            reportName: 'Pytest Report',
+            reportTitles: 'Unit Test Results'
             ])
         }
-
-        failure {
-            echo '❌ Build failed! Please check logs.'
-        }
     }
+
 }
