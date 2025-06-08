@@ -24,10 +24,12 @@ pipeline {
             steps {
                 echo "Run pytest unit tests"
                 sh '''
+                    export PYTHONPATH=.
                     /tmp/jenkins_venv/bin/pytest tests/
                 '''
             }
         }
+
 
 
         stage('SAST Scan') {
