@@ -60,7 +60,7 @@ pipeline {
                 sh '''
                 docker run --name zap -u root -v /var/lib/jenkins/workspace/flask-todo-app:/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
                 sleep 15  # tunggu ZAP siap
-                docker exec zap zap-cli quick-scan --self-contained --start-options "-config api.disablekey=true" http://host.docker.internal:5000
+                docker exec zap zap-cli quick-scan --self-contained --start-options -config api.disablekey=true http://host.docker.internal:5000
                 docker stop zap
                 docker rm zap
                 '''
