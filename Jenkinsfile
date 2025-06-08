@@ -12,9 +12,8 @@ pipeline {
                 echo "Setup virtual environment and install dependencies"
                 sh '''
                     python3 -m venv venv
-                    . venv/bin/activate
-                    pip install --upgrade pip --break-system-packages
-                    pip install -r requirements.txt --break-system-packages
+                    ./venv/bin/pip install --upgrade pip
+                    ./venv/bin/pip install -r requirements.txt
                 '''
             }
         }
@@ -22,20 +21,14 @@ pipeline {
         stage('Test') {
             steps {
                 echo "Run pytest unit tests"
-                sh '''
-                    . venv/bin/activate
-                    pytest tests/
-                '''
+                sh './venv/bin/pytest tests/'
             }
         }
 
         stage('SAST Scan') {
             steps {
                 echo "Run Bandit security scan"
-                sh '''
-                    . venv/bin/activate
-                    bandit -r app/ -ll -iii
-                '''
+                sh './venv/bin/bandit -r app/ -ll -iii'
             }
         }
 
@@ -44,8 +37,7 @@ pipeline {
                 echo "Run Flask app in background"
                 sh '''
                     pkill -f "flask run" || true
-                    . venv/bin/activate
-                    nohup flask run --host=0.0.0.0 > flask.log 2>&1 &
+                    ./venv/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
                     sleep 10
                 '''
             }
@@ -66,8 +58,8 @@ pipeline {
             steps {
                 echo "Deploy to staging (example: docker build and push)"
                 sh '''
-                    docker build -t todo-app:latest .
-                    # docker push yourregistry/todo-app:latest
+                    docker build -t ${APP_NAME}:latest .
+                    # docker push yourregistry/${APP_NAME}:latest
                 '''
             }
         }
