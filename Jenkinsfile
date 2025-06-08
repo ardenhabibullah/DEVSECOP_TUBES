@@ -54,15 +54,28 @@ pipeline {
             }
         }
 
+        
         stage('DAST Scan') {
             steps {
                 echo "🛡️ Run OWASP ZAP scan"
                 sh '''
-                docker run --name zap -u root -v /var/lib/jenkins/workspace/flask-todo-app:/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
-                sleep 15  # tunggu ZAP siap
-                docker exec zap zap-cli quick-scan --self-contained --start-options -config api.disablekey=true http://host.docker.internal:5000
-                docker stop zap
-                docker rm zap
+                    # Start ZAP container
+                    docker run --name zap -u root -v /var/lib/jenkins/workspace/flask-todo-app:/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+
+                    # Tunggu container siap
+                    sleep 15
+
+                    # Install pip dan zap-cli di dalam container
+                    docker exec zap apt-get update
+                    docker exec zap apt-get install -y python3-pip
+                    docker exec zap pip3 install zap-cli
+
+                    # Jalankan DAST scan
+                    docker exec zap zap-cli quick-scan --self-contained --start-options -config api.disablekey=true http://host.docker.internal:5000
+
+                    # Cleanup container
+                    docker stop zap
+                    docker rm zap
                 '''
             }
         }
