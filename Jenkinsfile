@@ -23,24 +23,37 @@ pipeline {
 
         stage('Test') {
             steps {
-                echo '🧪 Run pytest unit tests'
+                echo '🧪 Run pytest unit tests with JUnit XML report'
                 sh '''
                     set -e
                     export PYTHONPATH=.
-                    $VENV_DIR/bin/pytest tests/
+                    $VENV_DIR/bin/pytest tests/ --junitxml=pytest-report.xml
                 '''
+            }
+            post {
+                always {
+                    junit 'pytest-report.xml'
+                }
             }
         }
 
+
         stage('SAST Scan') {
             steps {
-                echo '🔒 Run Bandit security scan'
+                echo '🔒 Run Bandit security scan with XML output'
                 sh '''
                     set -e
-                    $VENV_DIR/bin/bandit -r app/ -ll -iii
+                    $VENV_DIR/bin/bandit -r app/ -ll -iii -f xml -o bandit-report.xml
                 '''
             }
+            post {
+                always {
+                    // Anda bisa simpan file xml ini, dan gunakan plugin seperti Warnings Next Generation di Jenkins untuk parse laporan
+                    archiveArtifacts artifacts: 'bandit-report.xml', allowEmptyArchive: true
+                }
+            }
         }
+
 
         stage('Deploy to Test Environment') {
             steps {
@@ -57,12 +70,23 @@ pipeline {
         
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP scan'
+                echo '🛡️ Run OWASP ZAP baseline scan and generate HTML report'
                 sh '''
                     set -e
-                    docker rm -f zap || true
-                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0
+                    docker run --rm -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:5000 -r zap-report.html
                 '''
+            }
+            post {
+                always {
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: '.',
+                        reportFiles: 'zap-report.html',
+                        reportName: 'OWASP ZAP Report'
+                    ])
+                }
             }
         }
 
