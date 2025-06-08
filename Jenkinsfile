@@ -56,15 +56,17 @@ pipeline {
 
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP scan'
+                echo "🛡️ Run OWASP ZAP scan"
                 sh '''
-                    set -e
-                    zap-cli start --start-options '-config api.disablekey=true'
-                    zap-cli quick-scan --self-contained --spider --scanners all $TEST_URL
-                    zap-cli shutdown
+                docker run -u root -d --name zap -p 8090:8090 -i owasp/zap2docker-stable zap.sh -daemon -port 8090 -host 0.0.0.0 -config api.disablekey=true
+                sleep 15  # tunggu ZAP siap
+                docker exec zap zap-cli quick-scan --self-contained --start-options "-config api.disablekey=true" http://host.docker.internal:5000
+                docker stop zap
+                docker rm zap
                 '''
             }
         }
+
 
         stage('Deploy to Staging') {
             steps {
