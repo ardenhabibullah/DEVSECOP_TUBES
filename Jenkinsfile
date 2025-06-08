@@ -73,7 +73,10 @@ pipeline {
                 echo '🛡️ Run OWASP ZAP baseline scan and generate HTML report'
                 sh '''
                     set -e
-                    docker run --rm -v $(pwd):/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:5000 -r zap-report.html
+                    docker run --rm --network=host \
+                        -v $WORKSPACE:/zap/wrk/:rw \
+                        ghcr.io/zaproxy/zaproxy:stable \
+                        zap-baseline.py -t $TEST_URL -r zap-report.html
                 '''
             }
             post {
@@ -89,6 +92,7 @@ pipeline {
                 }
             }
         }
+
 
 
 
