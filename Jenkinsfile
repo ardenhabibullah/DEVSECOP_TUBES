@@ -49,7 +49,6 @@ pipeline {
             }
         }
         
-        // MEMASTIKAN PERINTAH YANG BENAR DIGUNAKAN
         stage('Deploy to Test Environment') {
             steps {
                 echo '🚀 Run Flask app in background'
@@ -63,17 +62,16 @@ pipeline {
             }
         }
 
-        // PERBAIKAN JARINGAN DOCKER
         stage('DAST Scan') {
             steps {
                 echo '🛡️ Run OWASP ZAP scan and generate reports (max 5 minutes)'
                 sh '''
                     set -e
-                    # SAAT MENGGUNAKAN --network="host", KONTAINER BISA MENGAKSES HOST MELALUI 127.0.0.1
+                    # Saat menggunakan --network="host", kontainer bisa mengakses host melalui 127.0.0.1
                     TARGET_URL_FOR_ZAP="http://127.0.0.1:5000"
                     
                     docker rm -f zap || true
-                    # GUNAKAN JARINGAN HOST SECARA LANGSUNG, LEBIH ANDAL DI LINUX
+                    # Gunakan jaringan host secara langsung, ini lebih andal di Linux
                     docker run --name zap -u root -v $(pwd):/zap/wrk/:rw --network="host" \
                         -d ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 \
                         -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
