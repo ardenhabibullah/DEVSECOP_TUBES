@@ -57,7 +57,7 @@ pipeline {
                 sh '''
                     set -e
                     pkill -f "flask run" || true
-                    // Run the app in the background so the pipeline can continue
+                    # Run the app in the background so the pipeline can continue
                     nohup $VENV_DIR/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
                     sleep 10
                 '''
@@ -81,7 +81,7 @@ pipeline {
                     sleep 15
 
                     echo "Starting ZAP Scan on ${TARGET_URL_FOR_ZAP}"
-                    // Run ZAP baseline scan and generate reports in multiple formats
+                    # Run ZAP baseline scan and generate reports in multiple formats
                     docker exec zap zap-baseline.py -t ${TARGET_URL_FOR_ZAP} -r zap-report.html -w zap-report.md -J zap-report.json
 
                     echo "ZAP Scan finished, reports generated in the workspace."
@@ -104,7 +104,8 @@ pipeline {
     post {
         always {
             echo '🧹 Cleanup and archive reports'
-            sh '''
+            // The `|| true` prevents the build from failing if the commands fail (e.g., container not found)
+            sh script: '''
                 pkill -f "flask run" || true
                 docker rm -f zap || true
                 
