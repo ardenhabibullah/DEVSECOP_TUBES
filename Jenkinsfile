@@ -45,7 +45,7 @@ pipeline {
                 sh '''
                     set -e
                     mkdir -p reports
-                    // Generate report in HTML format
+                    # Generate report in HTML format
                     $VENV_DIR/bin/bandit -r app/ -f html -o reports/bandit-report.html -ll -iii
                 '''
             }
