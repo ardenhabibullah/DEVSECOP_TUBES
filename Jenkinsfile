@@ -114,7 +114,7 @@ pipeline {
             echo '✅ Build successful!'
         }
         failure {
-            echo '❌ Build failed! Please check logs.'
+            echo '❌ Build failed Please check logs.'
         }
     }
 }
