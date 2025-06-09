@@ -9,7 +9,6 @@ pipeline {
 
     stages {
 
-        // ... stage Build, Test, SAST Scan (tidak ada perubahan) ...
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
@@ -50,7 +49,7 @@ pipeline {
             }
         }
         
-        // PERBAIKAN DI SINI
+        // MEMASTIKAN PERINTAH YANG BENAR DIGUNAKAN
         stage('Deploy to Test Environment') {
             steps {
                 echo '🚀 Run Flask app in background'
@@ -64,23 +63,24 @@ pipeline {
             }
         }
 
-        // PERBAIKAN DAN OPTIMISASI DI SINI
+        // PERBAIKAN JARINGAN DOCKER
         stage('DAST Scan') {
             steps {
                 echo '🛡️ Run OWASP ZAP scan and generate reports (max 5 minutes)'
                 sh '''
                     set -e
-                    TARGET_URL_FOR_ZAP="http://host.docker.internal:5000"
+                    # SAAT MENGGUNAKAN --network="host", KONTAINER BISA MENGAKSES HOST MELALUI 127.0.0.1
+                    TARGET_URL_FOR_ZAP="http://127.0.0.1:5000"
                     
                     docker rm -f zap || true
-                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw --add-host=host.docker.internal:host-gateway \
-                        -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 \
+                    # GUNAKAN JARINGAN HOST SECARA LANGSUNG, LEBIH ANDAL DI LINUX
+                    docker run --name zap -u root -v $(pwd):/zap/wrk/:rw --network="host" \
+                        -d ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 \
                         -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
                     
                     sleep 15
 
                     echo "Starting ZAP Scan on ${TARGET_URL_FOR_ZAP}"
-                    # Tambahkan "-m 5" untuk membatasi waktu scan menjadi 5 menit
                     docker exec zap zap-baseline.py -t ${TARGET_URL_FOR_ZAP} -m 5 -r zap-report.html -w zap-report.md -J zap-report.json
 
                     echo "ZAP Scan finished."
@@ -101,7 +101,6 @@ pipeline {
     }
 
     post {
-        // ... Tidak ada perubahan di blok post ...
         always {
             echo '🧹 Cleanup and archive reports'
             sh script: '''
