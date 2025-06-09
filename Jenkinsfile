@@ -9,6 +9,7 @@ pipeline {
 
     stages {
 
+        // ... stage Build, Test, SAST Scan (tidak ada perubahan) ...
         stage('Build') {
             steps {
                 echo '📦 Setup virtual environment and install dependencies'
@@ -33,7 +34,6 @@ pipeline {
             }
             post {
                 always {
-                    // Publish test results to Jenkins UI
                     junit 'reports/test-results.xml'
                 }
             }
@@ -45,31 +45,31 @@ pipeline {
                 sh '''
                     set -e
                     mkdir -p reports
-                    # Generate report in HTML format
                     $VENV_DIR/bin/bandit -r app/ -f html -o reports/bandit-report.html -ll -iii
                 '''
             }
         }
-
+        
+        // PERBAIKAN DI SINI
         stage('Deploy to Test Environment') {
             steps {
                 echo '🚀 Run Flask app in background'
                 sh '''
                     set -e
                     pkill -f "flask run" || true
-                    # Run the app in the background so the pipeline can continue
+                    # Jalankan di background (&) dan simpan output ke flask.log
                     nohup $VENV_DIR/bin/flask run --host=0.0.0.0 > flask.log 2>&1 &
                     sleep 10
                 '''
             }
         }
 
+        // PERBAIKAN DAN OPTIMISASI DI SINI
         stage('DAST Scan') {
             steps {
-                echo '🛡️ Run OWASP ZAP scan and generate reports'
+                echo '🛡️ Run OWASP ZAP scan and generate reports (max 5 minutes)'
                 sh '''
                     set -e
-                    # Use host.docker.internal to allow the ZAP container to access the Flask app running on the host
                     TARGET_URL_FOR_ZAP="http://host.docker.internal:5000"
                     
                     docker rm -f zap || true
@@ -77,14 +77,13 @@ pipeline {
                         -d -p 8091:8090 ghcr.io/zaproxy/zaproxy:stable zap.sh -daemon -port 8090 -host 0.0.0.0 \
                         -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
                     
-                    # Wait for ZAP to start
                     sleep 15
 
                     echo "Starting ZAP Scan on ${TARGET_URL_FOR_ZAP}"
-                    # Run ZAP baseline scan and generate reports in multiple formats
-                    docker exec zap zap-baseline.py -t ${TARGET_URL_FOR_ZAP} -r zap-report.html -w zap-report.md -J zap-report.json
+                    # Tambahkan "-m 5" untuk membatasi waktu scan menjadi 5 menit
+                    docker exec zap zap-baseline.py -t ${TARGET_URL_FOR_ZAP} -m 5 -r zap-report.html -w zap-report.md -J zap-report.json
 
-                    echo "ZAP Scan finished, reports generated in the workspace."
+                    echo "ZAP Scan finished."
                 '''
             }
         }
@@ -102,25 +101,21 @@ pipeline {
     }
 
     post {
+        // ... Tidak ada perubahan di blok post ...
         always {
             echo '🧹 Cleanup and archive reports'
-            // The `|| true` prevents the build from failing if the commands fail (e.g., container not found)
             sh script: '''
                 pkill -f "flask run" || true
                 docker rm -f zap || true
                 
-                # Create a directory for ZAP reports and copy them from the workspace
                 mkdir -p reports/zap
                 cp zap-report.html zap-report.md zap-report.json reports/zap/ || true
             '''
-            // Archive all files in the reports directory
             archiveArtifacts artifacts: 'reports/**/*', fingerprint: true
         }
-
         success {
             echo '✅ Build successful!'
         }
-
         failure {
             echo '❌ Build failed! Please check logs.'
         }
